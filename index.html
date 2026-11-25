@@ -63,7 +63,8 @@
     <p class="sub">Suelta la barra para oír el sonido (3 s). Puedes reajustar y soltar las veces que quieras.</p>
     <input id="barra" type="range" min="0" max="1" step="0.001" value="0.5">
     <div class="escala"><span>lento</span><span>rápido</span></div>
-    <div><button id="btnConfirmar">Confirmar</button></div>
+    <div><button id="btnReproducir" class="sec">Reproducir sonido ▶</button>
+         <button id="btnConfirmar">Confirmar</button></div>
     <div class="estado" id="estado"></div>
   </section>
 
@@ -126,11 +127,16 @@ let idx = 0;                // trial actual
 let contCat = {};           // repeticion dentro de cada categoria
 let velActualMps = 0;       // velocidad del estimulo del trial actual
 let catActual = "", repActual = 0;
+let etiquetaActual = "";    // texto que se muestra encima del cuadrado
 let participante = "P_" + new Date().toISOString().replace(/[-:T.Z]/g,"").slice(0,14);
 let filas = [];             // respuestas (copia local)
 let animId = null, animT0 = null, srcActual = null;
 
 const $ = id => document.getElementById(id);
+
+// Texto del boton reproducir/parar.
+function botonPlay(){ $('btnReproducir').textContent = "Reproducir sonido ▶"; }
+function botonStop(){ $('btnReproducir').textContent = "Parar ■"; }
 
 // ===================== AUDIO (Web Audio API) =====================
 function fmodDeV(v){ v = Math.min(Math.max(v,0),1); return FMOD_MIN * Math.pow(FMOD_MAX/FMOD_MIN, v); }
@@ -201,6 +207,9 @@ function reproducir(v){
   const src = audioCtx.createBufferSource();
   src.buffer = buf; src.connect(audioCtx.destination); src.start();
   srcActual = src;
+  // Al terminar solo el clip (3 s), el boton vuelve a "Reproducir". El guard
+  // evita que el onended de una fuente cortada/sustituida afecte al boton.
+  src.onended = () => { if (srcActual === src){ srcActual = null; botonPlay(); } };
 }
 
 // ===================== ANIMACION DEL CUADRADO =====================
@@ -209,6 +218,14 @@ const Y0 = (CANVAS_ALTO - LADO)/2;
 
 function dibujar(x){
   ctx2d.clearRect(0,0,CANVAS_ANCHO,CANVAS_ALTO);
+  // Etiqueta "Movimiento N — Velocidad N" encima del cuadrado.
+  if (etiquetaActual){
+    ctx2d.fillStyle = '#e8e8ea';
+    ctx2d.font = '600 22px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx2d.textAlign = 'center';
+    ctx2d.textBaseline = 'middle';
+    ctx2d.fillText(etiquetaActual, CANVAS_ANCHO/2, 26);
+  }
   ctx2d.fillStyle = '#4da3ff';
   ctx2d.fillRect(x, Y0, LADO, LADO);
 }
@@ -247,8 +264,11 @@ function nuevoTrial(){
   repActual = contCat[catActual];
   const [lo,hi] = VELOCIDADES_MPS[catActual];
   velActualMps = lo + Math.random()*(hi-lo);
+  const num = catActual.replace(/\D/g,"");    // "velocidad3" -> "3"
+  etiquetaActual = `Movimiento ${num} — Velocidad ${num}`;
   $('barra').value = Math.random();           // posicion inicial aleatoria
   resetCuadrado();
+  botonPlay();
   $('estado').textContent = `Intento ${idx+1} de ${plan.length}`;
   actualizarDebug();
 }
@@ -321,9 +341,21 @@ $('btnEmpezar').addEventListener('click', () => {
 });
 
 // Soltar la barra -> suena 3 s + cuadrado se mueve 3 s (sincronizados).
-$('barra').addEventListener('pointerup', () => lanzarEstimulo(parseFloat($('barra').value)));
+$('barra').addEventListener('pointerup', () => { lanzarEstimulo(parseFloat($('barra').value)); botonStop(); });
 // Mientras arrastra: silencio, solo actualizar debug.
 $('barra').addEventListener('input', actualizarDebug);
+// Boton: toggle reproducir/parar.
+$('btnReproducir').addEventListener('click', () => {
+  if (srcActual){                       // sonando -> parar y reiniciar cuadrado
+    try{ srcActual.stop(); }catch(e){}
+    srcActual = null;
+    resetCuadrado();
+    botonPlay();
+  } else {                              // en silencio -> lanzar estimulo
+    lanzarEstimulo(parseFloat($('barra').value));
+    botonStop();
+  }
+});
 $('btnConfirmar').addEventListener('click', confirmar);
 $('btnDescargar').addEventListener('click', descargarCSV);
 
